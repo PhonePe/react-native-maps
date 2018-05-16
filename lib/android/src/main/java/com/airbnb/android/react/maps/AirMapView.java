@@ -70,6 +70,7 @@ public class AirMapView extends MapView implements GoogleMap.InfoWindowAdapter,
   private ScaleGestureDetector scalegestureDetector;
   private boolean scrollEnabled = false;
   private boolean zoomEnabled = false;
+  private boolean allowMovementDuringZoom = false;
   private boolean isZooming = false;
 
   private LatLngBounds boundsToMove;
@@ -80,6 +81,7 @@ public class AirMapView extends MapView implements GoogleMap.InfoWindowAdapter,
   private boolean initialRegionSet = false;
   private LatLngBounds cameraLastIdleBounds;
   private int cameraMoveReason = 0;
+  private GoogleMap.OnCameraIdleListener idleListener;
 
   private static final String[] PERMISSIONS = new String[]{
       "android.permission.ACCESS_FINE_LOCATION", "android.permission.ACCESS_COARSE_LOCATION"};
@@ -153,6 +155,14 @@ public class AirMapView extends MapView implements GoogleMap.InfoWindowAdapter,
             }
             return false;
           }
+
+          public boolean onDoubleTap(MotionEvent e) {
+            Log.i("Amit", "Double Tap happend: ");
+            return false;
+          }
+
+
+
         });
 
     this.addOnLayoutChangeListener(new OnLayoutChangeListener() {
@@ -173,7 +183,7 @@ public class AirMapView extends MapView implements GoogleMap.InfoWindowAdapter,
   }
 
   private void reenableGestures() {
-    Log.i("ReactNativeJS1", "Reenabling");
+    Log.i("Amit", "Re enabling");
     if (map != null && !map.getUiSettings().isScrollGesturesEnabled()) {
       handler.postDelayed(new Runnable() {
         @Override
@@ -210,7 +220,7 @@ public class AirMapView extends MapView implements GoogleMap.InfoWindowAdapter,
         } else if (detector.getEventTime() - lastZoomTime >= 50) {
           lastZoomTime = detector.getEventTime();
           float zoomValue = getZoomValue(detector.getCurrentSpan(), lastSpan);
-          Log.i("ReactNativeJS", "ZoomValue: " + zoomValue);
+          Log.i("Amit", "ZoomValue: " + zoomValue);
           map.animateCamera(CameraUpdateFactory.zoomBy(zoomValue), 50, null);
           lastSpan = detector.getCurrentSpan();
         }
@@ -219,15 +229,12 @@ public class AirMapView extends MapView implements GoogleMap.InfoWindowAdapter,
 
       @Override
       public boolean onScaleBegin(ScaleGestureDetector detector) {
-        Log.i("TEMP_VIEW", "onScaleBegin: ");
         lastSpan = -1;
         return true;
       }
 
       @Override
       public void onScaleEnd(ScaleGestureDetector detector) {
-        Log.i("TEMP_VIEW", "onScaleEnd: ");
-        Log.i("ReactNativeJS1", "Scaling ended");
         lastSpan = -1;
 
       }
@@ -340,19 +347,24 @@ public class AirMapView extends MapView implements GoogleMap.InfoWindowAdapter,
       }
     });
 
-    map.setOnCameraIdleListener(new GoogleMap.OnCameraIdleListener() {
+    idleListener = new GoogleMap.OnCameraIdleListener() {
       @Override
       public void onCameraIdle() {
         LatLngBounds bounds = map.getProjection().getVisibleRegion().latLngBounds;
         if ((cameraMoveReason != 0) &&
-          ((cameraLastIdleBounds == null) ||
-            LatLngBoundsUtils.BoundsAreDifferent(bounds, cameraLastIdleBounds))) {
-          cameraLastIdleBounds = bounds;
-          Log.i("ReactNativeJS1", "RComplete ");
-          eventDispatcher.dispatchEvent(new RegionChangeEvent(getId(), bounds, false));
+                ((cameraLastIdleBounds == null) ||
+                        LatLngBoundsUtils.BoundsAreDifferent(bounds, cameraLastIdleBounds))) {
+          if(!isZooming) {
+            cameraLastIdleBounds = bounds;
+            Log.i("Amit", "RComplete " + bounds);
+            eventDispatcher.dispatchEvent(new RegionChangeEvent(getId(), bounds, false));
+
+          }
         }
       }
-    });
+    };
+
+    map.setOnCameraIdleListener(idleListener);
 
     map.setOnMapLoadedCallback(new GoogleMap.OnMapLoadedCallback() {
       @Override public void onMapLoaded() {
@@ -492,6 +504,10 @@ public class AirMapView extends MapView implements GoogleMap.InfoWindowAdapter,
     this.zoomEnabled = zoomEnabled;
     if(!isZooming)
       this.map.getUiSettings().setZoomControlsEnabled(zoomEnabled);
+  }
+
+  public void allowMovementDuringZoom(boolean allowMovement) {
+    this.allowMovementDuringZoom = allowMovementDuringZoom;
   }
 
   public void setScrollEnabled(boolean scrollEnabled) {
@@ -810,7 +826,6 @@ public class AirMapView extends MapView implements GoogleMap.InfoWindowAdapter,
 
   @Override
   public boolean dispatchTouchEvent(MotionEvent ev) {
-    gestureDetector.onTouchEvent(ev);
 
     int action = MotionEventCompat.getActionMasked(ev);
 
@@ -822,6 +837,16 @@ public class AirMapView extends MapView implements GoogleMap.InfoWindowAdapter,
         break;
       case (MotionEvent.ACTION_UP):
         fingers = 0;
+        isZooming = false;
+        Log.i("Amit", "Touch Ended: " + this.map.getCameraPosition().zoom);
+        handler.postDelayed(new Runnable() {
+          @Override
+          public void run() {        //Delayed so that position can be finalized
+            idleListener.onCameraIdle();  //Call idle listener so that it can do stuff, if not already handled by cameraIdle
+
+          }
+        }, 50);
+
         // Clear this regardless, since isScrollGesturesEnabled() may have been updated
         this.getParent().requestDisallowInterceptTouchEvent(false);
         break;
@@ -840,8 +865,7 @@ public class AirMapView extends MapView implements GoogleMap.InfoWindowAdapter,
       reenableGestures();
     }
 
-    Log.i("TEMP_VIEW", "dispatchTouchEvent: ");
-    if (fingers > 1) {
+    if (fingers > 1 && allowMovementDuringZoom == false && zoomEnabled == true) {
       return scalegestureDetector.onTouchEvent(ev);
     } else {
       gestureDetector.onTouchEvent(ev);

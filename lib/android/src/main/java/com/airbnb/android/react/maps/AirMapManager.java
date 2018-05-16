@@ -1,5 +1,6 @@
 package com.airbnb.android.react.maps;
 
+import android.util.Log;
 import android.view.View;
 
 import com.facebook.react.bridge.Arguments;
@@ -173,11 +174,20 @@ public class AirMapManager extends ViewGroupManager<AirMapView> {
 
   @ReactProp(name = "scrollEnabled", defaultBoolean = false)
   public void setScrollEnabled(AirMapView view, boolean scrollEnabled) {
+    Log.i("Amit", "setScrollEnabled: " + scrollEnabled);
+
     view.setScrollEnabled(scrollEnabled);
+  }
+
+  @ReactProp(name = "allowMovementDuringZoom", defaultBoolean = false)
+  public void allowMovementDuringZoom(AirMapView view, boolean allowMovement) {
+    Log.i("Amit", "allowMovement: " + allowMovement);
+    view.allowMovementDuringZoom(allowMovement);
   }
 
   @ReactProp(name = "zoomEnabled", defaultBoolean = false)
   public void setZoomEnabled(AirMapView view, boolean zoomEnabled) {
+    Log.i("Amit", "setZoomEnabled: " + zoomEnabled);
     view.setZoomEnabled(zoomEnabled);
   }
 
