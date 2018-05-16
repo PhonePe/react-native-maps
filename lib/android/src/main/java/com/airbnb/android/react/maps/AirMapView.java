@@ -13,6 +13,8 @@ import android.support.v4.view.GestureDetectorCompat;
 import android.support.v4.view.MotionEventCompat;
 import android.view.GestureDetector;
 import android.view.MotionEvent;
+import android.util.Log;
+import android.view.ScaleGestureDetector;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ImageView;
@@ -61,6 +63,14 @@ public class AirMapView extends MapView implements GoogleMap.InfoWindowAdapter,
   private Integer loadingBackgroundColor = null;
   private Integer loadingIndicatorColor = null;
   private final int baseMapPadding = 50;
+  private int fingers = 0;
+  private long lastZoomTime = 0;
+  private float lastSpan = -1;
+  private Handler handler = new Handler();
+  private ScaleGestureDetector scalegestureDetector;
+  private boolean scrollEnabled = false;
+  private boolean zoomEnabled = false;
+  private boolean isZooming = false;
 
   private LatLngBounds boundsToMove;
   private boolean showUserLocation = false;
@@ -157,6 +167,31 @@ public class AirMapView extends MapView implements GoogleMap.InfoWindowAdapter,
     eventDispatcher = reactContext.getNativeModule(UIManagerModule.class).getEventDispatcher();
   }
 
+  private float getZoomValue(float currentSpan, float lastSpan) {
+    double value = (Math.log(currentSpan / lastSpan) / Math.log(1.55d));
+    return (float) value;
+  }
+
+  private void reenableGestures() {
+    Log.i("ReactNativeJS1", "Reenabling");
+    if (map != null && !map.getUiSettings().isScrollGesturesEnabled()) {
+      handler.postDelayed(new Runnable() {
+        @Override
+        public void run() {
+          map.getUiSettings().setScrollGesturesEnabled(scrollEnabled);
+          map.getUiSettings().setZoomControlsEnabled(zoomEnabled);
+        }
+      }, 50);
+    }
+  }
+
+  private void disableGestures() {
+    handler.removeCallbacksAndMessages(null);
+    if (map != null && map.getUiSettings().isScrollGesturesEnabled()) {
+      map.getUiSettings().setAllGesturesEnabled(false);
+    }
+  }
+
   @Override
   public void onMapReady(final GoogleMap map) {
     if (destroyed) {
@@ -167,8 +202,42 @@ public class AirMapView extends MapView implements GoogleMap.InfoWindowAdapter,
     this.map.setOnMarkerDragListener(this);
 
     manager.pushEvent(context, this, "onMapReady", new WritableNativeMap());
+    scalegestureDetector = new ScaleGestureDetector(getContext(), new ScaleGestureDetector.OnScaleGestureListener() {
+      @Override
+      public boolean onScale(ScaleGestureDetector detector) {
+        if (lastSpan == -1) {
+          lastSpan = detector.getCurrentSpan();
+        } else if (detector.getEventTime() - lastZoomTime >= 50) {
+          lastZoomTime = detector.getEventTime();
+          float zoomValue = getZoomValue(detector.getCurrentSpan(), lastSpan);
+          Log.i("ReactNativeJS", "ZoomValue: " + zoomValue);
+          map.animateCamera(CameraUpdateFactory.zoomBy(zoomValue), 50, null);
+          lastSpan = detector.getCurrentSpan();
+        }
+        return true;
+      }
+
+      @Override
+      public boolean onScaleBegin(ScaleGestureDetector detector) {
+        Log.i("TEMP_VIEW", "onScaleBegin: ");
+        lastSpan = -1;
+        return true;
+      }
+
+      @Override
+      public void onScaleEnd(ScaleGestureDetector detector) {
+        Log.i("TEMP_VIEW", "onScaleEnd: ");
+        Log.i("ReactNativeJS1", "Scaling ended");
+        lastSpan = -1;
+
+      }
+    });
 
     final AirMapView view = this;
+
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+      scalegestureDetector.setStylusScaleEnabled(false);
+    }
 
     map.setOnMarkerClickListener(new GoogleMap.OnMarkerClickListener() {
       @Override
@@ -279,6 +348,7 @@ public class AirMapView extends MapView implements GoogleMap.InfoWindowAdapter,
           ((cameraLastIdleBounds == null) ||
             LatLngBoundsUtils.BoundsAreDifferent(bounds, cameraLastIdleBounds))) {
           cameraLastIdleBounds = bounds;
+          Log.i("ReactNativeJS1", "RComplete ");
           eventDispatcher.dispatchEvent(new RegionChangeEvent(getId(), bounds, false));
         }
       }
@@ -416,6 +486,18 @@ public class AirMapView extends MapView implements GoogleMap.InfoWindowAdapter,
   public void setCacheEnabled(boolean cacheEnabled) {
     this.cacheEnabled = cacheEnabled;
     this.cacheView();
+  }
+
+  public void setZoomEnabled(boolean zoomEnabled) {
+    this.zoomEnabled = zoomEnabled;
+    if(!isZooming)
+      this.map.getUiSettings().setZoomControlsEnabled(zoomEnabled);
+  }
+
+  public void setScrollEnabled(boolean scrollEnabled) {
+    this.scrollEnabled = scrollEnabled;
+    if(!isZooming)
+      this.map.getUiSettings().setScrollGesturesEnabled(scrollEnabled);
   }
 
   public void enableMapLoading(boolean loadingEnabled) {
@@ -734,13 +816,35 @@ public class AirMapView extends MapView implements GoogleMap.InfoWindowAdapter,
 
     switch (action) {
       case (MotionEvent.ACTION_DOWN):
+        fingers = 1;
         this.getParent().requestDisallowInterceptTouchEvent(
             map != null && map.getUiSettings().isScrollGesturesEnabled());
         break;
       case (MotionEvent.ACTION_UP):
+        fingers = 0;
         // Clear this regardless, since isScrollGesturesEnabled() may have been updated
         this.getParent().requestDisallowInterceptTouchEvent(false);
         break;
+      case MotionEvent.ACTION_POINTER_DOWN:
+        fingers = fingers + 1;
+        break;
+      case MotionEvent.ACTION_POINTER_UP:
+        fingers = fingers - 1;
+        break;
+    }
+    if (fingers > 1 && zoomEnabled) {
+      isZooming = true;
+      disableGestures();
+    } else if (fingers < 1) {
+      isZooming = false;
+      reenableGestures();
+    }
+
+    Log.i("TEMP_VIEW", "dispatchTouchEvent: ");
+    if (fingers > 1) {
+      return scalegestureDetector.onTouchEvent(ev);
+    } else {
+      gestureDetector.onTouchEvent(ev);
     }
     super.dispatchTouchEvent(ev);
     return true;

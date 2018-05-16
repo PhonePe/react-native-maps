@@ -173,12 +173,12 @@ public class AirMapManager extends ViewGroupManager<AirMapView> {
 
   @ReactProp(name = "scrollEnabled", defaultBoolean = false)
   public void setScrollEnabled(AirMapView view, boolean scrollEnabled) {
-    view.map.getUiSettings().setScrollGesturesEnabled(scrollEnabled);
+    view.setScrollEnabled(scrollEnabled);
   }
 
   @ReactProp(name = "zoomEnabled", defaultBoolean = false)
   public void setZoomEnabled(AirMapView view, boolean zoomEnabled) {
-    view.map.getUiSettings().setZoomGesturesEnabled(zoomEnabled);
+    view.setZoomEnabled(zoomEnabled);
   }
 
   @ReactProp(name = "zoomControlEnabled", defaultBoolean = true)
