@@ -270,6 +270,15 @@ id regionAsJSON(MKCoordinateRegion region) {
   return self.settings.zoomGestures;
 }
 
+- (void)setAllowMovementDuringZoom:(BOOL)allowMovement {
+    self.settings.allowScrollGesturesDuringRotateOrZoom = allowMovement;
+}
+
+- (BOOL)allowMovementDuringZoom {
+    return self.settings.allowScrollGesturesDuringRotateOrZoom;
+}
+
+
 - (void)setRotateEnabled:(BOOL)rotateEnabled {
   self.settings.rotateGestures = rotateEnabled;
 }
